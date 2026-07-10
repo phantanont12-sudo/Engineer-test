@@ -60,6 +60,11 @@ select,.search{background:#1e293b;border:1px solid #334155;color:#e2e8f0;padding
 .toTop{position:fixed;right:16px;bottom:16px;background:#2563eb;color:#fff;border:none;width:44px;height:44px;border-radius:50%;font-size:1.1rem;cursor:pointer;box-shadow:0 4px 12px rgba(0,0,0,.4);opacity:.9}
 footer{text-align:center;color:#64748b;font-size:.78rem;padding:24px 0}
 .empty{text-align:center;color:#64748b;padding:40px}
+.hint{color:#94a3b8;font-size:.85rem;margin-bottom:10px;text-align:center}
+.lk .qtext{margin-bottom:8px}
+.ans-line{padding:9px 12px;border-radius:8px;background:#064e3b;border:1px solid #10b981;color:#d1fae5;font-weight:600;display:flex;gap:8px}
+.ans-line .k{color:#6ee7b7;font-weight:700}
+.sub-tag{font-size:.72rem;color:#64748b;font-weight:400}
 </style>
 </head>
 <body>
@@ -69,6 +74,7 @@ footer{text-align:center;color:#64748b;font-size:.78rem;padding:24px 0}
     <p>แบบทดสอบประเมินและรับรองมาตรฐานความรู้ · นายทหารสัญญาบัตร (ร.ต.-พ.อ.) · 150 ข้อ</p>
   </header>
   <div class="tabs">
+    <div class="tab" data-mode="lookup">ค้นเร็ว (หาคำตอบ)</div>
     <div class="tab active" data-mode="study">โหมดอ่านเฉลย</div>
     <div class="tab" data-mode="quiz">โหมดฝึกทำข้อสอบ</div>
   </div>
@@ -86,6 +92,7 @@ footer{text-align:center;color:#64748b;font-size:.78rem;padding:24px 0}
     <div><span class="score-num" id="scoreNum">0 / 0</span> <span class="muted" id="scorePct"></span></div>
     <div><button class="btn" id="submitBtn">ตรวจคะแนน</button> <button class="btn gray" id="resetBtn">ล้างคำตอบ</button></div>
   </div>
+  <div id="hint" class="hint"></div>
   <div id="list"></div>
   <footer>สร้างเพื่อการทบทวน / เตรียมสอบ / ใช้เป็นคลังอ้างอิงในการออกข้อสอบ · โครงสร้างหัวข้อตรงตามเอกสารต้นฉบับ</footer>
 
@@ -103,6 +110,7 @@ const catSel = document.getElementById("catSel");
 const searchEl = document.getElementById("search");
 const scorebar = document.getElementById("scorebar");
 const tocBody = document.getElementById("tocBody");
+const hintEl = document.getElementById("hint");
 
 const structure = [];
 const catMap = {};
@@ -151,7 +159,24 @@ function filtered(){
 function render(){
   const qs = filtered();
   scorebar.classList.toggle("show", mode==="quiz");
+  const hasSearch = searchEl.value.trim().length>0;
+  if(mode==="lookup"){
+    hintEl.textContent = hasSearch ? ("พบ "+qs.length+" ข้อ") : "พิมพ์คำสำคัญ หรือวางข้อความโจทย์ลงในช่องค้นหา แล้วคำตอบจะขึ้นทันที";
+  } else {
+    hintEl.textContent = hasSearch ? ("พบ "+qs.length+" ข้อ") : "";
+  }
   if(qs.length===0){ listEl.innerHTML='<div class="empty">ไม่พบข้อสอบที่ตรงกับเงื่อนไข</div>'; return; }
+
+  if(mode==="lookup"){
+    listEl.innerHTML = qs.map(function(q){
+      return '<div class="card lk"><div class="qhead"><span class="qnum">ข้อ '+q.n+'</span><span class="sub-tag">'+q.sub+'</span></div>'+
+        '<div class="qtext">'+q.q+'</div>'+
+        '<div class="ans-line"><span class="k">เฉลย '+KEY[q.ans]+'.</span><span>'+q.opts[q.ans]+'</span></div>'+
+        '<div class="exp show" style="margin-top:8px">'+q.exp+'</div></div>';
+    }).join("");
+    return;
+  }
+
   let html="", lastCat="", lastSub="";
   qs.forEach(function(q){
     if(q.cat!==lastCat){ html+='<div class="sec-main">'+q.cat+'</div>'; lastCat=q.cat; lastSub=""; }
@@ -193,6 +218,7 @@ document.querySelectorAll(".tab").forEach(function(t){
     document.querySelectorAll(".tab").forEach(function(x){ x.classList.remove("active"); });
     t.classList.add("active"); mode=t.dataset.mode; submitted=false; picks={};
     updateScore(); render();
+    if(mode==="lookup"){ searchEl.focus(); window.scrollTo({top:0,behavior:"smooth"}); }
   });
 });
 let allShown=false;
