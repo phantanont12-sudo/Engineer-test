@@ -75,6 +75,7 @@ footer{text-align:center;color:#64748b;font-size:.78rem;padding:24px 0}
 .octext{margin-top:12px;background:#0f172a;border-radius:8px;padding:4px 12px}
 .octext summary{cursor:pointer;color:#94a3b8;font-size:.85rem;padding:6px 0}
 .octext #ocrText{font-size:.85rem;color:#cbd5e1;white-space:pre-wrap;padding-bottom:8px}
+.batch-head{margin:14px 0 6px;font-weight:700;color:#93c5fd;border-top:1px solid #334155;padding-top:10px}
 </style>
 </head>
 <body>
@@ -95,8 +96,8 @@ footer{text-align:center;color:#64748b;font-size:.78rem;padding:24px 0}
     <div id="drop" class="drop">
       <div class="drop-ic">🖼️</div>
       <p><b>ลากรูปมาวาง</b> · กดเพื่อเลือกไฟล์ · หรือกด <b>Ctrl+V</b> เพื่อวางภาพที่แคปไว้</p>
-      <p class="drop-sub">แคปภาพที่มีทั้งโจทย์และตัวเลือกจะแม่นที่สุด</p>
-      <input type="file" id="ocrFile" accept="image/*" style="display:none">
+      <p class="drop-sub">รับได้หลายภาพพร้อมกัน (สูงสุด 10 ภาพต่อครั้ง) · แคปให้เห็นทั้งโจทย์และตัวเลือกจะแม่นสุด</p>
+      <input type="file" id="ocrFile" accept="image/*" multiple style="display:none">
     </div>
     <img id="ocrPreview" class="ocrprev" style="display:none" alt="ภาพที่อัปโหลด">
     <div id="ocrProg" class="ocrprog" style="display:none"></div>
@@ -285,17 +286,45 @@ function runOCR(file){
     })
     .catch(function(e){ ocrProg.textContent="เกิดข้อผิดพลาดในการอ่านภาพ: "+(e&&e.message?e.message:e); });
 }
+const MAXIMG=10;
+function collectImages(fl){ const a=[]; for(let i=0;i<fl.length;i++){ if(fl[i].type.indexOf("image")===0) a.push(fl[i]); } return a; }
+function renderBatch(results){
+  listEl.innerHTML = results.map(function(r){
+    const head='<div class="batch-head">ภาพที่ '+r.idx+'</div>';
+    if(r.err) return head+'<div class="empty">อ่านภาพไม่สำเร็จ: '+r.err+'</div>';
+    if(!r.matches.length || r.matches[0].s<0.06) return head+'<div class="empty">ไม่พบข้อที่ตรงกับภาพนี้ (ลองแคปให้ชัดขึ้น)</div>';
+    const best=r.matches[0];
+    return head+ansCard(best.q, "ความมั่นใจ "+Math.round(best.s*100)+"% • "+best.q.sub);
+  }).join("");
+}
+function runOCRBatch(fileList){
+  if(typeof Tesseract==="undefined"){ ocrProg.style.display="block"; ocrProg.textContent="โหลดตัวอ่านภาพไม่สำเร็จ (ต้องต่ออินเทอร์เน็ตครั้งแรก)"; return; }
+  let imgs=collectImages(fileList); if(!imgs.length) return;
+  let note=""; if(imgs.length>MAXIMG){ note=" (รับสูงสุด "+MAXIMG+" ภาพ ส่วนเกินถูกตัด)"; imgs=imgs.slice(0,MAXIMG); }
+  ocrPreview.style.display="none"; ocrTextWrap.style.display="none";
+  ocrProg.style.display="block"; listEl.innerHTML="";
+  const results=[]; let i=0;
+  function step(){
+    if(i>=imgs.length){ ocrProg.textContent="อ่านครบ "+imgs.length+" ภาพแล้ว"+note; renderBatch(results); return; }
+    ocrProg.textContent="กำลังอ่านภาพที่ "+(i+1)+"/"+imgs.length+" ..."+note;
+    Tesseract.recognize(imgs[i],"tha+eng",{logger:function(m){ if(m.status==="recognizing text") ocrProg.textContent="กำลังอ่านภาพที่ "+(i+1)+"/"+imgs.length+" ... "+Math.round(m.progress*100)+"%"+note; }})
+      .then(function(res){ const text=(res.data.text||"").trim(); results.push({idx:i+1,text:text,matches:findMatches(text)}); renderBatch(results); i++; step(); })
+      .catch(function(e){ results.push({idx:i+1,matches:[],err:(e&&e.message)?e.message:String(e)}); i++; step(); });
+  }
+  step();
+}
 if(drop){
   drop.addEventListener("click", function(){ ocrFile.click(); });
   drop.addEventListener("dragover", function(e){ e.preventDefault(); drop.classList.add("over"); });
   drop.addEventListener("dragleave", function(){ drop.classList.remove("over"); });
-  drop.addEventListener("drop", function(e){ e.preventDefault(); drop.classList.remove("over"); if(e.dataTransfer.files[0]) runOCR(e.dataTransfer.files[0]); });
-  ocrFile.addEventListener("change", function(e){ if(e.target.files[0]) runOCR(e.target.files[0]); });
+  drop.addEventListener("drop", function(e){ e.preventDefault(); drop.classList.remove("over"); runOCRBatch(e.dataTransfer.files); });
+  ocrFile.addEventListener("change", function(e){ runOCRBatch(e.target.files); });
 }
 window.addEventListener("paste", function(e){
   if(mode!=="ocr") return;
-  const items=(e.clipboardData||{}).items||[];
-  for(let i=0;i<items.length;i++){ if(items[i].type.indexOf("image")===0){ runOCR(items[i].getAsFile()); break; } }
+  const items=(e.clipboardData||{}).items||[]; const fl=[];
+  for(let i=0;i<items.length;i++){ if(items[i].type.indexOf("image")===0){ const f=items[i].getAsFile(); if(f) fl.push(f); } }
+  if(fl.length) runOCRBatch(fl);
 });
 
 function applyMode(){
@@ -311,7 +340,7 @@ document.querySelectorAll(".tab").forEach(function(t){
     document.querySelectorAll(".tab").forEach(function(x){ x.classList.remove("active"); });
     t.classList.add("active"); mode=t.dataset.mode; submitted=false; picks={};
     applyMode(); updateScore();
-    if(mode==="ocr"){ scorebar.classList.remove("show"); listEl.innerHTML='<div class="empty">อัปโหลดหรือวางภาพโจทย์ด้านบน แล้วระบบจะอ่านและหาคำตอบให้</div>'; }
+    if(mode==="ocr"){ scorebar.classList.remove("show"); listEl.innerHTML='<div class="empty">อัปโหลดหรือวางภาพโจทย์ด้านบน (ทีละภาพหรือหลายภาพพร้อมกันได้) แล้วระบบจะอ่านและหาคำตอบให้</div>'; }
     else { render(); if(mode==="lookup"){ searchEl.focus(); window.scrollTo({top:0,behavior:"smooth"}); } }
   });
 });
